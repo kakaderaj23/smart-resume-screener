@@ -22,10 +22,12 @@ import uuid
 from pathlib import Path
 from typing import Dict, Any
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.database import get_db
 
 logger = logging.getLogger("smart-resume-screener.api.resume")
 
@@ -66,13 +68,15 @@ class ResumeUploadResponse(BaseModel):
     status_code=status.HTTP_200_OK,
     summary="Securely upload a resume PDF file",
     description="Accepts a single PDF file via multipart/form-data, validates its structure and extension, "
-                "and saves it with a unique UUID filename while preserving the original filename."
+                "saves it with a unique UUID filename, extracts its text and profile metadata, "
+                "and persists it in SQLite."
 )
 async def upload_resume(
-    resume: UploadFile = File(..., description="The PDF resume file to upload")
+    resume: UploadFile = File(..., description="The PDF resume file to upload"),
+    db: Session = Depends(get_db)
 ) -> ResumeUploadResponse:
     """
-    Handle secure resume uploading.
+    Handle secure resume uploading, parsing, and database persistence.
 
     Validations & Workflow:
     1. Check presence of original filename and verify `.pdf` extension.
@@ -80,18 +84,21 @@ async def upload_resume(
     3. Verify file header magic bytes (`%PDF-`) to ensure the file is structurally a PDF.
     4. Generate a collision-resistant UUID v4 filename.
     5. Stream the file in 1 MB chunks from SpooledTemporaryFile to disk in `uploads/` directory.
-    6. Ensure atomic cleanup of partial files if an I/O exception occurs.
+    6. Extract plain text from PDF and extract contact info into CandidateProfile.
+    7. Persist resume details and parsed profile to the SQLite database.
+    8. Ensure atomic cleanup of local files if parsing or database insertion fails.
 
     Args:
         resume (UploadFile): The uploaded resume file object from multipart/form-data.
+        db (Session): Database session dependency.
 
     Returns:
         ResumeUploadResponse: Structured JSON containing success message, storage filename,
-                              original filename, and size in bytes.
+                               original filename, and size in bytes.
 
     Raises:
-        HTTPException (400): If the file is not a valid `.pdf` or is empty.
-        HTTPException (500): If server filesystem errors prevent saving the file.
+        HTTPException (400): If the file is not a valid `.pdf` or parsing fails.
+        HTTPException (500): If server filesystem or database errors occur.
     """
     # 1. Validate filename presence and extension (.pdf only)
     if not resume.filename or not resume.filename.strip():
@@ -192,7 +199,85 @@ async def upload_resume(
 
     logger.info(f"Successfully uploaded '{original_filename}' ({size_bytes} bytes) -> stored as '{unique_filename}'.")
 
-    # 6. Return structured response JSON matching exact milestone specification
+    # 6. Pipeline processing: Extract text, parse profile, and persist to SQLite
+    from app.services.pdf_service import PDFService, PDFExtractionError
+    from app.services.extractor_service import ExtractorService
+    from app.models.resume_record import ResumeRecord, ProcessingStatus
+    from app.repositories.resume_repository import ResumeRepository
+
+    repo = ResumeRepository()
+    
+    # 6.1 Create and persist initial record in UPLOADED state
+    record = ResumeRecord(
+        original_filename=original_filename,
+        stored_filename=unique_filename,
+        processing_status=ProcessingStatus.UPLOADED
+    )
+    try:
+        repo.save(db, record)
+    except Exception as exc:
+        if file_path.exists():
+            try:
+                file_path.unlink()
+            except OSError:
+                pass
+        logger.error(f"Failed to persist initial resume record for '{original_filename}': {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while initializing the resume record in the database."
+        )
+
+    # 6.2 Run PDF Text Extraction and transition to TEXT_EXTRACTED
+    pdf_service = PDFService()
+    try:
+        raw_text = pdf_service.extract_text(file_path)
+        record.raw_text = raw_text
+        record.processing_status = ProcessingStatus.TEXT_EXTRACTED
+        repo.update(db, record)
+    except PDFExtractionError as exc:
+        record.processing_status = ProcessingStatus.FAILED
+        try:
+            repo.update(db, record)
+        except Exception:
+            pass
+        # Cleanup saved file on disk if text extraction fails
+        if file_path.exists():
+            try:
+                file_path.unlink()
+            except OSError:
+                pass
+        logger.warning(f"Failed to extract text from uploaded PDF '{original_filename}': {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc)
+        )
+
+    # 6.3 Run Deterministic Profile Parsing and transition to PROFILE_PARSED
+    extractor = ExtractorService()
+    try:
+        profile = extractor.extract(raw_text)
+        record.from_candidate_profile(profile)
+        record.processing_status = ProcessingStatus.PROFILE_PARSED
+        repo.update(db, record)
+    except Exception as exc:
+        record.processing_status = ProcessingStatus.FAILED
+        try:
+            repo.update(db, record)
+        except Exception:
+            pass
+        # Cleanup saved file on disk if database updates fail
+        if file_path.exists():
+            try:
+                file_path.unlink()
+            except OSError:
+                pass
+        logger.error(f"Failed to process and update candidate profile for '{original_filename}': {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while parsing and saving the candidate profile."
+        )
+
+    # 7. Return structured response JSON matching exact milestone specification
     return ResumeUploadResponse(
         message="Resume uploaded successfully",
         filename=unique_filename,

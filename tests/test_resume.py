@@ -8,11 +8,48 @@ from pathlib import Path
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.main import app
 from app.config import settings
+from app.database import Base, get_db
 
 client = TestClient(app)
+
+# Setup in-memory SQLite database for test isolation
+TEST_DATABASE_URL = "sqlite:///:memory:"
+test_engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+
+@pytest.fixture(autouse=True)
+def setup_db():
+    """
+    Fixture to create all database tables in-memory before each test
+    and drop them afterwards.
+    """
+    Base.metadata.create_all(bind=test_engine)
+    yield
+    Base.metadata.drop_all(bind=test_engine)
+
+
+@pytest.fixture(autouse=True)
+def override_db():
+    """
+    Fixture to override the app's get_db dependency to point to the
+    in-memory testing database.
+    """
+    def get_test_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+    app.dependency_overrides[get_db] = get_test_db
+    yield
+    app.dependency_overrides.clear()
+
 
 @pytest.fixture(autouse=True)
 def setup_and_cleanup_uploads(tmp_path, monkeypatch):

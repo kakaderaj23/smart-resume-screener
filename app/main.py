@@ -20,6 +20,16 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Smart Resume Screener Backend Foundation...")
     logger.info(f"App Name: {settings.APP_NAME}")
     logger.info(f"Version: {settings.VERSION}")
+    
+    # Initialize database tables
+    from app.database import Base, engine
+    import app.models  # Ensure models are imported so SQLAlchemy registers them
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables initialized successfully.")
+    except Exception as e:
+        logger.error(f"Error initializing database tables: {e}", exc_info=True)
+        
     yield
     logger.info("Shutting down Smart Resume Screener Backend...")
 
