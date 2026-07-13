@@ -81,6 +81,7 @@ def test_screen_candidate_orchestration_flow_success(
     mock_record = MagicMock(spec=ResumeRecord)
     mock_record.id = 42
     mock_record.original_filename = "Jane_Doe_CV.pdf"
+    mock_record.raw_text = "Jane Doe Resume Raw Text"
     mock_record.to_candidate_profile.return_value = dummy_profile
     repository.get.return_value = mock_record
 
@@ -135,7 +136,8 @@ def test_screen_candidate_orchestration_flow_success(
     prompt_renderer.build_matching_prompt.assert_called_once_with(
         candidate_profile=dummy_profile,
         job_requirements=dummy_requirements,
-        rule_evidence=dummy_evidence
+        rule_evidence=dummy_evidence,
+        raw_text="Jane Doe Resume Raw Text"
     )
     
     execution_service.execute.assert_called_once_with(dummy_prompt)

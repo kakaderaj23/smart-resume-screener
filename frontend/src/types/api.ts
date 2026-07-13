@@ -3,6 +3,7 @@ export type ConfidenceLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 
 export interface ResumeUploadResponse {
   message: string;
+  resume_id: number;
   filename: string;
   original_filename: string;
   size_bytes: number;

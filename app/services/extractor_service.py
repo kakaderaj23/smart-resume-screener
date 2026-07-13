@@ -16,11 +16,41 @@ heuristics for these fields is vastly preferred over calling semantic Large Lang
 
 import logging
 import re
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple, Set
 
 from app.schemas.candidate import CandidateProfile, PersonalInfo, ProfessionalInfo, Metadata
 
 logger = logging.getLogger("smart-resume-screener.services.extractor")
+
+# Centralized technical skill dictionary with case-insensitive aliases
+TECHNICAL_SKILL_DICTIONARY: Dict[str, List[str]] = {
+    "Python": ["python"],
+    "React": ["react", "react.js", "reactjs"],
+    "Machine Learning": ["machine learning", "ml", "artificial intelligence", "deep learning"],
+    "Git": ["git", "github"],
+    "Docker": ["docker", "containerization"],
+    "AWS": ["aws", "amazon web services"],
+    "PostgreSQL": ["postgresql", "postgres"],
+    "SQLAlchemy": ["sqlalchemy"],
+    "FastAPI": ["fastapi"],
+    "NumPy": ["numpy"],
+    "Pandas": ["pandas"],
+}
+
+
+def _build_whole_word_regex(alias: str) -> re.Pattern:
+    """Build a case-insensitive whole-word regex pattern for a skill alias."""
+    escaped = re.escape(alias.lower())
+    start_bound = r'\b' if alias[0].isalnum() or alias[0] == '_' else r'(?:^|\W)'
+    end_bound = r'\b' if alias[-1].isalnum() or alias[-1] == '_' else r'(?:$|\W)'
+    return re.compile(f"{start_bound}{escaped}{end_bound}", re.IGNORECASE)
+
+
+# Precompile regex patterns for each canonical skill and its aliases for fast lookup
+_TECHNICAL_SKILL_PATTERNS: List[Tuple[str, List[re.Pattern]]] = [
+    (canonical, [_build_whole_word_regex(alias) for alias in aliases])
+    for canonical, aliases in TECHNICAL_SKILL_DICTIONARY.items()
+]
 
 # Compiled regular expressions for deterministic extraction
 EMAIL_PATTERN = re.compile(
@@ -65,6 +95,63 @@ class ExtractorService:
     Strictly avoids LLM calls, semantic parsing, or guessing. If a field is ambiguous or
     cannot be found with high confidence, it is left empty (`None`).
     """
+    TECHNICAL_SKILL_DICTIONARY = TECHNICAL_SKILL_DICTIONARY
+
+    def extract_skills(self, text: str, explicit_items: Optional[List[str]] = None) -> List[str]:
+        """
+        Extract technical skills deterministically using centralized dictionary aliases
+        and case-insensitive whole-word matching.
+
+        Requirements:
+        - Whole-word matching (e.g. 'ML' matches 'ML' but not 'HTML')
+        - Alias mapping to canonical names (e.g. 'react.js' -> 'React')
+        - Deduplication across matches and explicit section items
+        - Alphabetical sorting of the output list
+        """
+        matched_canonical = set()
+
+        # 1. Match dictionary aliases against the text using whole-word regex
+        if text and text.strip():
+            for canonical, patterns in _TECHNICAL_SKILL_PATTERNS:
+                for pattern in patterns:
+                    if pattern.search(text):
+                        matched_canonical.add(canonical)
+                        break
+
+        # 2. Process explicit section items (from SKILLS section) and map them if they match an alias
+        final_skills = set(matched_canonical)
+        if explicit_items:
+            for item in explicit_items:
+                clean_item = re.sub(r'^[-\s]+|[-\s]+$', '', item.strip())
+                if not clean_item or len(clean_item) < 2:
+                    continue
+
+                # Check if this item matches any alias in our dictionary
+                mapped = False
+                for canonical, patterns in _TECHNICAL_SKILL_PATTERNS:
+                    if canonical in final_skills:
+                        for pattern in patterns:
+                            if pattern.search(clean_item):
+                                mapped = True
+                                break
+                        if mapped:
+                            break
+                    else:
+                        for pattern in patterns:
+                            if pattern.search(clean_item):
+                                final_skills.add(canonical)
+                                mapped = True
+                                break
+                        if mapped:
+                            break
+
+                # If the item wasn't in the dictionary (e.g. Kubernetes, GraphQL), add its clean form
+                if not mapped:
+                    if not any(clean_item.lower() == existing.lower() for existing in final_skills):
+                        final_skills.add(clean_item)
+
+        # 3. Sort output alphabetically
+        return sorted(list(final_skills), key=lambda x: x.lower())
 
     def extract(self, raw_text: str) -> CandidateProfile:
         """
@@ -102,13 +189,8 @@ class ExtractorService:
             location=None  # Location requires semantic context / NLP, postponed to LLM stage
         )
 
-        # Professional lists explicitly left empty during deterministic extraction
-        professional_info = ProfessionalInfo(
-            skills=[],
-            education=[],
-            experience=[],
-            certifications=[]
-        )
+        # Populate deterministic section-based professional lists
+        professional_info = self._extract_professional_info(raw_text)
 
         metadata = Metadata(
             parser_version="0.1.0-deterministic"
@@ -215,7 +297,169 @@ class ExtractorService:
                 for word in words
             )
 
-            if is_capitalized and valid_characters:
-                return line
-
         return None
+
+    def _extract_professional_info(self, text: str) -> ProfessionalInfo:
+        """
+        Perform deterministic section-based extraction of professional information from raw resume text.
+        Detects common headings ("Skills", "Technical Skills", "Education", "Experience", "Projects", "Certifications")
+        and populates the corresponding lists inside `ProfessionalInfo`.
+        """
+        skills: List[str] = []
+        education: List[str] = []
+        experience: List[str] = []
+        certifications: List[str] = []
+
+        seen_skills = set()
+        current_section: Optional[str] = None
+
+        skills_headers = {
+            "skills", "technical skills", "core competencies", "key skills",
+            "professional skills", "skills & expertise", "technologies",
+            "technical competencies", "summary of skills", "competencies",
+            "technical expertise"
+        }
+        education_headers = {
+            "education", "academic background", "academic qualifications",
+            "qualifications", "education & credentials", "academic history",
+            "degrees", "educational background"
+        }
+        experience_headers = {
+            "experience", "work experience", "professional experience",
+            "employment history", "work history", "career history",
+            "projects", "key projects", "professional projects",
+            "relevant experience", "employment", "professional background",
+            "selected projects", "technical projects"
+        }
+        certifications_headers = {
+            "certifications", "licenses", "certificates", "certifications & licenses",
+            "professional certifications", "licenses & certifications",
+            "accreditations", "courses & certifications"
+        }
+        non_target_headers = {
+            "summary", "objective", "profile", "professional summary",
+            "contact", "contact info", "contact information", "personal info",
+            "personal details", "references", "awards", "honors", "languages",
+            "interests", "hobbies", "publications", "affiliations",
+            "executive summary", "career objective"
+        }
+
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        for line in lines:
+            cleaned_for_check = re.sub(r'^[#*\-=_~:\s\d\.\>\+\[\(]+|[#*\-=_~:\s\.\+\]\)]+$', '', line).strip()
+            normalized = " ".join(cleaned_for_check.lower().split())
+
+            words = normalized.split()
+            word_count = len(words)
+            is_header_candidate = False
+
+            if 1 <= word_count <= 5 and 2 <= len(normalized) <= 45:
+                if (
+                    normalized in skills_headers
+                    or normalized in education_headers
+                    or normalized in experience_headers
+                    or normalized in certifications_headers
+                    or normalized in non_target_headers
+                ):
+                    is_header_candidate = True
+                else:
+                    clean_alpha = re.sub(r'[^a-zA-Z]', '', line)
+                    is_all_caps = len(clean_alpha) >= 3 and clean_alpha.isupper()
+                    ends_with_colon = line.strip().endswith(":") and not any(
+                        word.lower() in ("http:", "https:", "email:", "phone:", "tel:", "mobile:")
+                        for word in line.split()
+                    )
+                    has_markdown_or_sep = bool(
+                        re.match(r'^[#=~]{1,6}\s+\w+', line)
+                        or re.match(r'^[=-]{3,}\s*\w+.*[=-]{3,}$', line)
+                        or re.match(r'^\d+[\.\)]\s+[A-Z]\w+', line)
+                    )
+
+                    if is_all_caps or ends_with_colon or has_markdown_or_sep:
+                        if any(k in normalized for k in ("skill", "competenc", "technolog")):
+                            normalized = "skills"
+                            is_header_candidate = True
+                        elif any(k in normalized for k in ("education", "academic", "degree", "qualification")):
+                            normalized = "education"
+                            is_header_candidate = True
+                        elif any(k in normalized for k in ("experience", "employment", "work history", "career history", "project")):
+                            normalized = "experience"
+                            is_header_candidate = True
+                        elif any(k in normalized for k in ("certification", "certificate", "license", "licensure")):
+                            normalized = "certifications"
+                            is_header_candidate = True
+                        elif any(k in normalized for k in ("summary", "objective", "profile", "reference", "contact", "award", "honor", "language", "interest")):
+                            normalized = "summary"
+                            is_header_candidate = True
+
+            if is_header_candidate:
+                if normalized in skills_headers or normalized == "skills":
+                    current_section = "skills"
+                elif normalized in education_headers or normalized == "education":
+                    current_section = "education"
+                elif normalized in experience_headers or normalized == "experience":
+                    current_section = "experience"
+                elif normalized in certifications_headers or normalized == "certifications":
+                    current_section = "certifications"
+                else:
+                    current_section = None
+                continue
+
+            if current_section is not None:
+                content_line = re.sub(r'^[•\*\-\+\d\.\>\s]+', '', line).strip()
+                if not content_line or len(content_line) < 2:
+                    continue
+
+                if current_section == "skills":
+                    if any(sep in content_line for sep in ("|", ",", ";", "•", "*")):
+                        if ":" in content_line and not content_line.lower().startswith("http"):
+                            parts_after_colon = content_line.split(":", 1)[1]
+                            raw_items = re.split(r'[,|;•\*\+]', parts_after_colon)
+                        else:
+                            raw_items = re.split(r'[,|;•\*\+]', content_line)
+                    else:
+                        if ":" in content_line and not content_line.lower().startswith("http"):
+                            raw_items = [content_line.split(":", 1)[1]]
+                        else:
+                            raw_items = [content_line]
+
+                    for item in raw_items:
+                        cleaned_item = re.sub(r'^[-\s]+|[-\s]+$', '', item.strip())
+                        if len(cleaned_item) >= 2 and cleaned_item.lower() not in seen_skills:
+                            seen_skills.add(cleaned_item.lower())
+                            skills.append(cleaned_item)
+
+                elif current_section == "education":
+                    education.append(content_line)
+
+                elif current_section == "experience":
+                    experience.append(content_line)
+
+                elif current_section == "certifications":
+                    certifications.append(content_line)
+
+        # Extract dictionary-matched skills across text, map explicit section items, deduplicate, and sort
+        skills = self.extract_skills(text, explicit_items=skills)
+
+        return ProfessionalInfo(
+            skills=skills,
+            education=education,
+            experience=experience,
+            certifications=certifications
+        )
+
+    def merge_profiles(
+        self,
+        deterministic_profile: Optional[CandidateProfile] = None,
+        llm_profile: Optional[CandidateProfile] = None,
+        db_profile: Optional[CandidateProfile] = None,
+    ) -> CandidateProfile:
+        """
+        Merge multiple CandidateProfile instances across pipeline stages while enforcing strict hierarchy rules.
+        Delegates to `CandidateProfile.merge_profiles`.
+        """
+        return CandidateProfile.merge_profiles(
+            deterministic_profile=deterministic_profile,
+            llm_profile=llm_profile,
+            db_profile=db_profile
+        )

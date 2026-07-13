@@ -57,6 +57,7 @@ class ResumeUploadResponse(BaseModel):
         size_bytes: Total size of the uploaded file in bytes.
     """
     message: str = Field(..., description="Status confirmation message")
+    resume_id: int = Field(..., description="Database ID of the persisted resume record")
     filename: str = Field(..., description="Unique UUID-based filename saved on disk")
     original_filename: str = Field(..., description="Original client-side filename")
     size_bytes: int = Field(..., description="Total size of the saved file in bytes")
@@ -280,6 +281,7 @@ async def upload_resume(
     # 7. Return structured response JSON matching exact milestone specification
     return ResumeUploadResponse(
         message="Resume uploaded successfully",
+        resume_id=record.id,
         filename=unique_filename,
         original_filename=original_filename,
         size_bytes=size_bytes

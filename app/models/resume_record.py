@@ -32,31 +32,28 @@ class ResumeRecord(Base):
     """
     __tablename__ = "resume_records"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, description="Primary key")
-    original_filename: Mapped[str] = mapped_column(String(255), nullable=False, description="Original filename from the client")
-    stored_filename: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, description="UUID filename saved on disk")
-    raw_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True, description="Extracted plain text content")
-    candidate_profile_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, description="CandidateProfile Pydantic schema stored as JSON")
-    latest_match_result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, description="Latest MatchResult schema serialized as JSON")
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)  # Primary key
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)  # Original filename from the client
+    stored_filename: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)  # UUID filename saved on disk
+    raw_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Extracted plain text content
+    candidate_profile_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # CandidateProfile Pydantic schema stored as JSON
+    latest_match_result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Latest MatchResult schema serialized as JSON
     processing_status: Mapped[ProcessingStatus] = mapped_column(
         SQLEnum(ProcessingStatus),
         default=ProcessingStatus.UPLOADED,
         nullable=False,
-        description="Current status of the pipeline processing"
-    )
+    )  # Current status of the pipeline processing
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
-        description="UTC creation timestamp"
-    )
+    )  # UTC creation timestamp
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
-        description="UTC update timestamp"
-    )
+    )  # UTC update timestamp
 
     def to_candidate_profile(self) -> Optional[CandidateProfile]:
         """
@@ -71,7 +68,7 @@ class ResumeRecord(Base):
         """
         Serialize a CandidateProfile schema into candidate_profile_json dictionary format.
         """
-        self.candidate_profile_json = profile.model_dump()
+        self.candidate_profile_json = profile.model_dump(mode='json')
 
     def to_match_result(self) -> Optional[MatchResult]:
         """
@@ -86,7 +83,7 @@ class ResumeRecord(Base):
         """
         Serialize a MatchResult schema into latest_match_result dictionary format.
         """
-        self.latest_match_result = match_result.model_dump()
+        self.latest_match_result = match_result.model_dump(mode='json')
 
     def __repr__(self) -> str:
         return f"<ResumeRecord(id={self.id}, status={self.processing_status}, original_filename='{self.original_filename}')>"

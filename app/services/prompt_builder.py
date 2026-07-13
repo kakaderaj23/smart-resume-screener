@@ -3,6 +3,7 @@ PromptBuilder service for dynamic prompt assembly and schema integration.
 """
 
 import json
+from typing import Optional
 from app.prompts import get_system_prompt, get_matching_prompt_template
 from app.schemas.candidate import CandidateProfile
 from app.schemas.match import JobRequirements, RuleEvidence, PromptPackage, MatchResult
@@ -46,18 +47,20 @@ class PromptBuilder:
         self,
         candidate_profile: CandidateProfile,
         job_requirements: JobRequirements,
-        rule_evidence: RuleEvidence
+        rule_evidence: RuleEvidence,
+        raw_text: Optional[str] = None
     ) -> PromptPackage:
         """
         Assemble the structured PromptPackage for LLM matching evaluations.
 
         Loads system instructions, formats user request placeholders using JSON-serialized
-        domain inputs, generates model JSON schema definitions, and packages them cleanly.
+        domain inputs and raw resume text, generates model JSON schema definitions, and packages them cleanly.
 
         Args:
             candidate_profile (CandidateProfile): Candidate contact and experience metadata.
             job_requirements (JobRequirements): Structured job requirements.
             rule_evidence (RuleEvidence): Fact-based deterministic comparison outcomes.
+            raw_text (Optional[str]): Original raw text extracted from the candidate's resume.
 
         Returns:
             PromptPackage: Type-safe package containing system, user, and full prompt views.
@@ -69,6 +72,7 @@ class PromptBuilder:
         candidate_str = candidate_profile.model_dump_json(indent=2)
         requirements_str = job_requirements.model_dump_json(indent=2)
         evidence_str = rule_evidence.model_dump_json(indent=2)
+        raw_text_str = raw_text.strip() if (raw_text and raw_text.strip()) else "No original resume text provided."
 
         # Generate output JSON schema specification dynamically from the Pydantic schema
         schema_json = json.dumps(MatchResult.model_json_schema(), indent=2)
@@ -76,6 +80,7 @@ class PromptBuilder:
         # Inject runtime details into user template
         user_prompt = user_template.format(
             candidate_profile=candidate_str,
+            raw_text=raw_text_str,
             job_requirements=requirements_str,
             rule_evidence=evidence_str,
             json_schema=schema_json,

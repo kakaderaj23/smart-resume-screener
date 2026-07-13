@@ -1,19 +1,29 @@
-import os
 from pathlib import Path
-from pydantic import BaseModel
+from pydantic_settings import BaseSettings
 
-class Settings(BaseModel):
+
+class Settings(BaseSettings):
     """
     Application configuration settings.
-    Provides type safety and centralized values for backend services.
+    Uses pydantic-settings BaseSettings to automatically load values
+    from environment variables and .env files.
     """
     APP_NAME: str = "Smart Resume Screener"
-    VERSION: str = "0.1.0"
+    VERSION: str = "1.0.0"
     DESCRIPTION: str = "A backend API foundation for the Smart Resume Screener application."
     DATABASE_URL: str = "sqlite:///./smart_resume_screener.db"
     UPLOAD_DIR: Path = Path("uploads")
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    XAI_API_KEY: str = ""
+    XAI_MODEL: str = "grok-4.5"
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
+
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
+
 
 # Create a single settings instance to be imported across the application
 settings = Settings()

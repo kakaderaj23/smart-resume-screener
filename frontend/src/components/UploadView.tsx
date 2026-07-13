@@ -107,7 +107,7 @@ export const UploadView: React.FC<UploadViewProps> = ({ onUploadSuccess, current
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => onUploadSuccess(currentResumeId)}
+              onClick={() => onUploadSuccess(response.resume_id)}
             >
               Proceed to Screening
               <ArrowRight size={16} />

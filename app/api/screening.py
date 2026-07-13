@@ -53,7 +53,7 @@ def get_screening_service(db: Session = Depends(get_db)) -> ResumeScreeningServi
     """
     from app.services.prompt_builder import PromptRenderer
     from app.services.llm_execution_service import LLMExecutionService
-    from app.providers.gemini_provider import GeminiProvider
+    from app.providers.groq_provider import GroqProvider
     from app.services.response_parser import LLMResponseParser
 
     repository = ResumeRepository()
@@ -61,7 +61,7 @@ def get_screening_service(db: Session = Depends(get_db)) -> ResumeScreeningServi
     prompt_renderer = PromptRenderer()
     
     # Instantiate LLM provider and parser adapters dynamically
-    provider = GeminiProvider()
+    provider = GroqProvider()
     parser = LLMResponseParser()
     execution_service = LLMExecutionService(provider, parser)
     

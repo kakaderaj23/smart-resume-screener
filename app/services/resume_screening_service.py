@@ -94,7 +94,8 @@ class ResumeScreeningService:
         prompt_package = self.prompt_renderer.build_matching_prompt(
             candidate_profile=profile,
             job_requirements=job_requirements,
-            rule_evidence=rule_evidence
+            rule_evidence=rule_evidence,
+            raw_text=record.raw_text
         )
 
         # 5. Execute LLM via LLMExecutionService (includes provider generate & parser validation)

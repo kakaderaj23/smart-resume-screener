@@ -55,3 +55,19 @@ def test_build_matching_prompt(builder: PromptBuilder, dummy_data):
     assert "66.67" in package.user_prompt
     assert "json_schema" not in package.user_prompt  # Placeholder should be replaced
     assert "semantic_score" in package.user_prompt  # Part of output schema definition
+    assert "No original resume text provided." in package.user_prompt
+    assert "Evaluate using BOTH:" in package.user_prompt
+
+
+def test_build_matching_prompt_with_raw_text(builder: PromptBuilder, dummy_data):
+    """
+    Test PromptBuilder assembly when raw_text is explicitly passed, verifying that
+    both the structured CandidateProfile and the raw resume text are included.
+    """
+    profile, requirements, evidence = dummy_data
+    raw_resume = "Jane Doe Resume\nSkills: Python, FastAPI, Docker (2 years)\nContact: jane@example.com"
+    package = builder.build_matching_prompt(profile, requirements, evidence, raw_text=raw_resume)
+
+    assert "Jane Doe Resume" in package.user_prompt
+    assert "Docker (2 years)" in package.user_prompt
+    assert "Evaluate using BOTH:" in package.user_prompt
