@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 from app.schemas.candidate import CandidateProfile
+from app.schemas.match import MatchResult
 
 
 class ProcessingStatus(str, Enum):
@@ -36,6 +37,7 @@ class ResumeRecord(Base):
     stored_filename: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, description="UUID filename saved on disk")
     raw_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True, description="Extracted plain text content")
     candidate_profile_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, description="CandidateProfile Pydantic schema stored as JSON")
+    latest_match_result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, description="Latest MatchResult schema serialized as JSON")
     processing_status: Mapped[ProcessingStatus] = mapped_column(
         SQLEnum(ProcessingStatus),
         default=ProcessingStatus.UPLOADED,
@@ -70,6 +72,21 @@ class ResumeRecord(Base):
         Serialize a CandidateProfile schema into candidate_profile_json dictionary format.
         """
         self.candidate_profile_json = profile.model_dump()
+
+    def to_match_result(self) -> Optional[MatchResult]:
+        """
+        Deserialize latest_match_result from the database into a validated MatchResult schema.
+        Returns None if match has not yet been processed.
+        """
+        if not self.latest_match_result:
+            return None
+        return MatchResult.model_validate(self.latest_match_result)
+
+    def from_match_result(self, match_result: MatchResult) -> None:
+        """
+        Serialize a MatchResult schema into latest_match_result dictionary format.
+        """
+        self.latest_match_result = match_result.model_dump()
 
     def __repr__(self) -> str:
         return f"<ResumeRecord(id={self.id}, status={self.processing_status}, original_filename='{self.original_filename}')>"

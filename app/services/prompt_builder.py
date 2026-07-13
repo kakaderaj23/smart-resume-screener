@@ -90,3 +90,7 @@ class PromptBuilder:
             user_prompt=user_prompt,
             full_prompt=full_prompt
         )
+
+
+# Class alias for clean matching orchestration layout matching Part 3 requirements
+PromptRenderer = PromptBuilder
