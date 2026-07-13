@@ -3,7 +3,7 @@ import logging
 from typing import Dict
 from fastapi import FastAPI
 from app.config import settings
-from app.api import resume
+from app.api import resume, screening
 
 # Configure simple application logging
 logging.basicConfig(
@@ -45,6 +45,7 @@ app = FastAPI(
 
 # Register API routers
 app.include_router(resume.router)
+app.include_router(screening.router)
 
 @app.get("/", tags=["Root"])
 async def read_root() -> Dict[str, str]:
