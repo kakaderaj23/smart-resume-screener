@@ -1,1 +1,1 @@
-# Obsolete file. Superseded by app/repositories/resume_repository.py.
+# This module has been removed. See app/repositories/resume_repository.py for the active implementation.

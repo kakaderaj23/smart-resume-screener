@@ -60,11 +60,11 @@ async def read_about() -> Dict[str, str]:
     return {
         "application": settings.APP_NAME,
         "version": settings.VERSION,
-        "description": "AI-powered resume screening system",
-        "llm_provider": "Groq",
-        "model": settings.GROQ_MODEL,
+        "description": settings.DESCRIPTION,
         "backend": "FastAPI",
         "database": "SQLite",
+        "ai_provider": "Groq",
+        "model": settings.GROQ_MODEL,
         "frontend": "React + Vite",
         "api_docs": "/docs",
         "health_endpoint": "/health"

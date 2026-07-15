@@ -1,5 +1,5 @@
 """
-Groq LLM Provider implementation using the official Groq SDK and models (e.g. openai/gpt-oss-120b).
+Groq LLM Provider implementation using the official Groq SDK and models (e.g. llama-3.3-70b-versatile).
 """
 
 import os
@@ -25,7 +25,7 @@ class GroqProviderError(ProviderError):
 
 class GroqProvider(BaseLLMProvider):
     """
-    Adapter for Groq models (such as openai/gpt-oss-120b or llama-3.3-70b-versatile) using the official groq SDK.
+    Adapter for Groq models (such as llama-3.3-70b-versatile) using the official groq SDK.
     """
 
     def __init__(self) -> None:
@@ -45,7 +45,7 @@ class GroqProvider(BaseLLMProvider):
                 "Groq API key is not configured. Please set the GROQ_API_KEY environment variable."
             )
 
-        self.model_name = settings.GROQ_MODEL or "openai/gpt-oss-120b"
+        self.model_name = settings.GROQ_MODEL or "llama-3.3-70b-versatile"
         try:
             # Initialize official Client from groq SDK
             self.client = Groq(api_key=api_key)

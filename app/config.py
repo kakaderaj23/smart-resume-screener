@@ -10,13 +10,13 @@ class Settings(BaseSettings):
     """
     APP_NAME: str = "Smart Resume Screener"
     VERSION: str = "1.0.0"
-    DESCRIPTION: str = "A backend API foundation for the Smart Resume Screener application."
+    DESCRIPTION: str = "AI-powered resume screening system for evaluating candidates against job descriptions."
     DATABASE_URL: str = "sqlite:///./smart_resume_screener.db"
     UPLOAD_DIR: Path = Path("uploads")
     XAI_API_KEY: str = ""
     XAI_MODEL: str = "grok-4.5"
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "openai/gpt-oss-120b"
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     model_config = {
         "env_file": ".env",

@@ -22,6 +22,7 @@ wheels/
 
 # Virtual environments
 .env
+.env.local
 .venv
 env/
 venv/
@@ -33,6 +34,7 @@ venv.bak/
 .pytest_cache/
 .coverage
 htmlcov/
+coverage/
 
 # Databases (SQLite)
 *.db
@@ -49,6 +51,9 @@ htmlcov/
 *.sln
 *.swp
 *.swo
+
+# Node.js
+node_modules/
 
 # Project specific upload exclusions
 uploads/*

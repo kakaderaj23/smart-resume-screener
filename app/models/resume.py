@@ -1,1 +1,1 @@
-# Obsolete file. Superseded by app/models/resume_record.py.
+# This module has been removed. See app/models/resume_record.py for the active model.
